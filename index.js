@@ -132,6 +132,14 @@ async function handleChallenge(interaction) {
     });
   }
 
+  // Check if user is bet banned
+  const allRoles   = await interaction.guild.roles.fetch();
+  const banRole    = allRoles.find(r => r.name === CONFIG.BET_BAN_ROLE_NAME);
+  const freshMember = await interaction.guild.members.fetch({ user: interaction.user.id, force: true });
+  if (banRole && freshMember.roles.cache.has(banRole.id)) {
+    return interaction.reply({ content: '🚫 You are **Bet Banned** and cannot create challenges.', ephemeral: true });
+  }
+
   // Check challenge limit (boosters get 2, everyone else gets 1)
   const isBooster   = interaction.member.premiumSince != null; // true if they boosted the server
   const maxAllowed  = isBooster ? CONFIG.BOOSTER_MAX_CHALLENGES : CONFIG.MAX_CHALLENGES;
@@ -438,31 +446,41 @@ async function createTicket(guild, challenger, opponent, challenge) {
 
 // ── Give strike (shared helper) ───────────────────────────────────────────────
 async function giveStrike(guild, member, reason) {
-  // Force fetch member and guild roles fresh from Discord API
-  const [freshMember] = await Promise.all([
-    guild.members.fetch(member.id),
-    guild.roles.fetch(),
-  ]).catch(() => [member]);
+  // Fetch all roles fresh from API
+  const allRoles = await guild.roles.fetch();
+  console.log('All guild roles:', allRoles.map(r => r.name).join(', '));
+
+  // Fetch member fresh
+  const freshMember = await guild.members.fetch({ user: member.id, force: true });
+  console.log('Member roles before strike:', freshMember.roles.cache.map(r => r.name).join(', '));
 
   // Count existing strikes
   let currentStrikes = 0;
   for (let i = 1; i <= CONFIG.STRIKES_BEFORE_BAN; i++) {
-    const r = guild.roles.cache.find(role => role.name === `${CONFIG.STRIKE_ROLE_PREFIX}-${i}`);
+    const r = allRoles.find(role => role.name === `${CONFIG.STRIKE_ROLE_PREFIX}-${i}`);
     if (r && freshMember.roles.cache.has(r.id)) currentStrikes = i;
   }
+  console.log(`Current strikes: ${currentStrikes}`);
 
   const newStrikes = Math.min(currentStrikes + 1, CONFIG.STRIKES_BEFORE_BAN);
-  const newRole    = guild.roles.cache.find(r => r.name === `${CONFIG.STRIKE_ROLE_PREFIX}-${newStrikes}`);
+  console.log(`Giving strike ${newStrikes}`);
 
+  const newRole = allRoles.find(r => r.name === `${CONFIG.STRIKE_ROLE_PREFIX}-${newStrikes}`);
   if (!newRole) {
-    console.error(`Strike role not found: ${CONFIG.STRIKE_ROLE_PREFIX}-${newStrikes}. Make sure roles are created!`);
+    console.error(`ROLE NOT FOUND: "${CONFIG.STRIKE_ROLE_PREFIX}-${newStrikes}" - check spelling in your server!`);
   } else {
-    await freshMember.roles.add(newRole).catch(e => console.error('Failed to add strike role:', e));
+    console.log(`Adding role: ${newRole.name} (${newRole.id})`);
+    await freshMember.roles.add(newRole.id).catch(e => console.error('Failed to add strike role:', e.message));
   }
 
+  // Give bet ban at max strikes
   if (newStrikes >= CONFIG.STRIKES_BEFORE_BAN) {
-    const banRole = guild.roles.cache.find(r => r.name === CONFIG.BET_BAN_ROLE_NAME);
-    if (banRole) await freshMember.roles.add(banRole).catch(e => console.error('Failed to add ban role:', e));
+    const banRole = allRoles.find(r => r.name === CONFIG.BET_BAN_ROLE_NAME);
+    if (!banRole) {
+      console.error(`BAN ROLE NOT FOUND: "${CONFIG.BET_BAN_ROLE_NAME}" - check spelling!`);
+    } else {
+      await freshMember.roles.add(banRole.id).catch(e => console.error('Failed to add ban role:', e.message));
+    }
   }
 
   return newStrikes;
