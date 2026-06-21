@@ -22,6 +22,7 @@ const CONFIG = {
   ],
   TICKETS_CATEGORY_NAME: 'Tickets',
   TICKET_LOG_CHANNEL:    'ticket-log',   // channel where closed tickets are logged
+  GAME_LOGS_CATEGORY:    '˗ˋˏ$ˎˊ˗ ɢᴀᴍᴇ ʟᴏɢꜱ', // category closed tickets are moved into
   MIDDLEMAN_ROLE_NAME:   'Middleman',
   MOD_ROLE_NAME:         'Moderator',
   HOUSE_CUT_PERCENT:     10,
@@ -38,7 +39,15 @@ const CONFIG = {
 // Add or remove games here. They will appear as a dropdown in /challenge.
 const GAMES = [
   'Rivals',
-  'Sniper DUels',
+  'Da Hood',
+  'Blade Ball',
+  'The Strongest Battlegrounds',
+  'BedWars',
+  'Arsenal',
+  'Murder Mystery 2',
+  'Criminality',
+  'Jailbreak',
+  'Brookhaven',
 ];
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -571,11 +580,12 @@ async function handleStrike(interaction) {
 
 // ── /closeticket ──────────────────────────────────────────────────────────────
 async function handleCloseTicket(interaction) {
-  const isMod = interaction.member.roles.cache.some(r => r.name === CONFIG.MOD_ROLE_NAME);
-  if (!isMod) return interaction.reply({ content: '❌ Only Moderators can close tickets.', ephemeral: true });
+  const isMod       = interaction.member.roles.cache.some(r => r.name === CONFIG.MOD_ROLE_NAME);
+  const isMiddleman = interaction.member.roles.cache.some(r => r.name === CONFIG.MIDDLEMAN_ROLE_NAME);
+  if (!isMod && !isMiddleman) return interaction.reply({ content: '❌ Only Moderators and Middlemen can close tickets.', ephemeral: true });
 
   activeTickets.delete(interaction.channel.id);
-  await interaction.reply({ content: '🔒 Closing and logging this ticket...' });
+  await interaction.reply({ content: '🔒 Closing and archiving this ticket...' });
   await logAndLockTicket(interaction.guild, interaction.channel, `🔒 Ticket closed by <@${interaction.user.id}>.`);
 }
 
@@ -583,7 +593,7 @@ async function handleCloseTicket(interaction) {
 async function logAndLockTicket(guild, ticketChannel, reason) {
   const logChannel = guild.channels.cache.find(c => c.name === CONFIG.TICKET_LOG_CHANNEL);
 
-  // Collect last 50 messages as a transcript summary
+  // Collect last 50 messages as transcript
   let transcript = '';
   try {
     const messages = await ticketChannel.messages.fetch({ limit: 50 });
@@ -596,29 +606,44 @@ async function logAndLockTicket(guild, ticketChannel, reason) {
         return `[${time}] ${m.author.username}: ${content}`;
       })
       .join('\n')
-      .slice(0, 3900); // stay under embed limit
+      .slice(0, 3900);
   } catch {}
 
+  // Post transcript to log channel
   if (logChannel) {
     const logEmbed = new EmbedBuilder()
       .setColor(0x95a5a6)
-      .setTitle(`📁 Ticket Closed — #${ticketChannel.name}`)
+      .setTitle(`📁 Ticket Archived — #${ticketChannel.name}`)
       .setDescription(reason)
-      .addFields({ name: '📜 Transcript (last 50 messages)', value: transcript ? "```" + transcript + "```" : "No messages recorded." })
+      .addFields({ name: '📜 Transcript (last 50 messages)', value: transcript ? "```" + transcript + "```" : 'No messages recorded.' })
       .setTimestamp();
-
     await logChannel.send({ embeds: [logEmbed] }).catch(() => {});
   }
 
-  // Lock channel — remove send permissions for everyone, keep it visible to mods
-  await ticketChannel.permissionOverwrites.edit(guild.roles.everyone, {
-    [PermissionFlagsBits.ViewChannel]:  false,
-    [PermissionFlagsBits.SendMessages]: false,
-  }).catch(() => {});
+  // Find the game logs category
+  const gameLogsCategory = guild.channels.cache.find(
+    c => c.type === ChannelType.GuildCategory && c.name === CONFIG.GAME_LOGS_CATEGORY
+  );
 
-  // Delete after logging
-  await ticketChannel.send('🔒 This ticket is now closed and will be deleted in 5 seconds.').catch(() => {});
-  setTimeout(() => ticketChannel.delete().catch(e => console.error('Failed to delete ticket:', e)), 5000);
+  // Get mod and middleman roles
+  const modRole        = guild.roles.cache.find(r => r.name === CONFIG.MOD_ROLE_NAME);
+  const middlemanRole  = guild.roles.cache.find(r => r.name === CONFIG.MIDDLEMAN_ROLE_NAME);
+
+  // Build new permission overwrites — hide from everyone, visible to mods/middlemen only
+  const overwrites = [
+    { id: guild.roles.everyone, deny: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+    ...(modRole       ? [{ id: modRole.id,       allow: [PermissionFlagsBits.ViewChannel], deny: [PermissionFlagsBits.SendMessages] }] : []),
+    ...(middlemanRole ? [{ id: middlemanRole.id, allow: [PermissionFlagsBits.ViewChannel], deny: [PermissionFlagsBits.SendMessages] }] : []),
+  ];
+
+  // Move channel to game logs category and apply new permissions
+  await ticketChannel.edit({
+    parent: gameLogsCategory?.id ?? ticketChannel.parentId,
+    permissionOverwrites: overwrites,
+    name: `closed-${ticketChannel.name}`,
+  }).catch(e => console.error('Failed to move ticket:', e.message));
+
+  await ticketChannel.send('🔒 This ticket has been archived and moved to game logs.').catch(() => {});
 }
 
 // ── Get current strike count helper ──────────────────────────────────────────
