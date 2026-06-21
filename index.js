@@ -34,6 +34,14 @@ const CONFIG = {
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── GAMES LIST ───────────────────────────────────────────────────────────────
+// Add or remove games here. They will appear as a dropdown in /challenge.
+const GAMES = [
+  'Rivals',
+  'Sniper DUels',
+];
+// ─────────────────────────────────────────────────────────────────────────────
+
 // challengeId -> { challengerId, game, amount, channelId, embedMessageId }
 const activeChallenges = new Map();
 // ticketChannelId -> { challengerId, opponentId, game, amount }
@@ -50,7 +58,11 @@ async function registerCommands() {
     new SlashCommandBuilder()
       .setName('challenge')
       .setDescription('Post a 1v1 betting challenge in this channel')
-      .addStringOption(o => o.setName('game').setDescription('Roblox game name').setRequired(true))
+      .addStringOption(o => {
+        const opt = o.setName('game').setDescription('Choose a game').setRequired(true);
+        GAMES.forEach(g => opt.addChoices({ name: g, value: g }));
+        return opt;
+      })
       .addIntegerOption(o => o.setName('amount').setDescription('Your bet in Rocoins (min 500)').setRequired(true).setMinValue(500)),
 
     new SlashCommandBuilder()
@@ -350,14 +362,10 @@ async function handleConfirmCancel(interaction) {
     try {
       const ch  = interaction.guild.channels.cache.get(challenge.channelId);
       const msg = await ch?.messages.fetch(challenge.embedMessageId);
-      if (msg) {
-        const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('x1').setLabel('❌ Cancelled').setStyle(ButtonStyle.Danger).setDisabled(true),
-          new ButtonBuilder().setCustomId('x2').setLabel('❌ Leave').setStyle(ButtonStyle.Danger).setDisabled(true),
-        );
-        await msg.edit({ components: [row] });
-      }
-    } catch {}
+      if (msg) await msg.delete().catch(() => {});
+    } catch (e) {
+      console.error('Failed to delete embed:', e.message);
+    }
   }
 
   return interaction.update({ content: `✅ Your challenge has been cancelled. You have received **Strike ${strikeCount}/${CONFIG.STRIKES_BEFORE_BAN}**.`, components: [] });
