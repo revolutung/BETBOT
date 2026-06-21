@@ -26,7 +26,7 @@ const CONFIG = {
   MOD_ROLE_NAME:         'Moderator',
   HOUSE_CUT_PERCENT:     10,
   STRIKES_BEFORE_BAN:    3,
-  STRIKE_ROLE_PREFIX:    'strike',   // roles: strike-1, strike-2, strike-3
+  STRIKE_ROLE_PREFIX:    'Strike',   // roles: Strike 1, Strike 2, Strike 3
   BET_BAN_ROLE_NAME:     'Bet Banned',
   BOOSTER_ROLE_NAME:     'Server Booster', // Discord's default Nitro booster role name
   MAX_CHALLENGES:        1,               // normal users
@@ -457,7 +457,7 @@ async function giveStrike(guild, member, reason) {
   // Count existing strikes
   let currentStrikes = 0;
   for (let i = 1; i <= CONFIG.STRIKES_BEFORE_BAN; i++) {
-    const r = allRoles.find(role => role.name === `${CONFIG.STRIKE_ROLE_PREFIX}-${i}`);
+    const r = allRoles.find(role => role.name === `${CONFIG.STRIKE_ROLE_PREFIX} ${i}`);
     if (r && freshMember.roles.cache.has(r.id)) currentStrikes = i;
   }
   console.log(`Current strikes: ${currentStrikes}`);
@@ -465,7 +465,7 @@ async function giveStrike(guild, member, reason) {
   const newStrikes = Math.min(currentStrikes + 1, CONFIG.STRIKES_BEFORE_BAN);
   console.log(`Giving strike ${newStrikes}`);
 
-  const newRole = allRoles.find(r => r.name === `${CONFIG.STRIKE_ROLE_PREFIX}-${newStrikes}`);
+  const newRole = allRoles.find(r => r.name === `${CONFIG.STRIKE_ROLE_PREFIX} ${newStrikes}`);
   if (!newRole) {
     console.error(`ROLE NOT FOUND: "${CONFIG.STRIKE_ROLE_PREFIX}-${newStrikes}" - check spelling in your server!`);
   } else {
@@ -617,7 +617,7 @@ async function logAndLockTicket(guild, ticketChannel, reason) {
 async function getCurrentStrikes(guild, member) {
   let count = 0;
   for (let i = 1; i <= CONFIG.STRIKES_BEFORE_BAN; i++) {
-    const r = guild.roles.cache.find(role => role.name === `${CONFIG.STRIKE_ROLE_PREFIX}-${i}`);
+    const r = guild.roles.cache.find(role => role.name === `${CONFIG.STRIKE_ROLE_PREFIX} ${i}`);
     if (r && member.roles.cache.has(r.id)) count = i;
   }
   return count;
