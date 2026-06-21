@@ -202,7 +202,7 @@ async function handleChallenge(interaction) {
   const embedMsg = await interaction.channel.send({ embeds: [embed], components: [row] });
 
   // Create ticket immediately for the challenger
-  const ticket = await createTicket(interaction.guild, interaction.member, null, { game, amount, challengerId: interaction.user.id, embedMessageId: embedMsg.id, channelId: interaction.channel.id });
+  const ticket = await createTicket(interaction.guild, interaction.member, null, { game, amount, tier: tier.name, challengerId: interaction.user.id, embedMessageId: embedMsg.id, channelId: interaction.channel.id });
 
   activeChallenges.set(embedMsg.id, {
     challengerId:    interaction.user.id,
