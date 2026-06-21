@@ -110,7 +110,7 @@ async function handleChallenge(interaction) {
   const amount = interaction.options.getInteger('amount');
 
   // Must be used in a tier channel
-  const tier = CONFIG.BET_TIERS.find(t => t.name === interaction.channel.name);
+  const tier = CONFIG.BET_TIERS.find(t => interaction.channel.name.toLowerCase().includes(t.name));
   if (!tier) {
     const names = CONFIG.BET_TIERS.map(t => `#${t.name}`).join(', ');
     return interaction.reply({ content: `❌ Use /challenge inside one of the bet channels: ${names}`, ephemeral: true });
