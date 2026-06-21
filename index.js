@@ -205,11 +205,12 @@ async function handleChallenge(interaction) {
   const ticket = await createTicket(interaction.guild, interaction.member, null, { game, amount, challengerId: interaction.user.id, embedMessageId: embedMsg.id, channelId: interaction.channel.id });
 
   activeChallenges.set(embedMsg.id, {
-    challengerId:   interaction.user.id,
+    challengerId:    interaction.user.id,
     game,
     amount,
-    channelId:      interaction.channel.id,
-    embedMessageId: embedMsg.id,
+    tier:            tier.name,
+    channelId:       interaction.channel.id,
+    embedMessageId:  embedMsg.id,
     ticketChannelId: ticket.id,
   });
 
@@ -252,6 +253,10 @@ async function handleJoin(interaction) {
       [PermissionFlagsBits.ViewChannel]: true,
       [PermissionFlagsBits.SendMessages]: true,
     });
+
+    // Rename ticket to include tier and both usernames
+    const tierName = challenge.tier ?? 'bet';
+    await ticketChannel.setName(`${tierName}-${interaction.guild.members.cache.get(challenge.challengerId)?.user.username ?? 'p1'}-vs-${interaction.user.username}`).catch(() => {});
 
     const winnerPayout = Math.floor(challenge.amount * 2 * (1 - CONFIG.HOUSE_CUT_PERCENT / 100));
     const houseCut     = challenge.amount * 2 - winnerPayout;
@@ -437,7 +442,7 @@ async function createTicket(guild, challenger, opponent, challenge) {
   }
 
   const channel = await guild.channels.create({
-    name: `bet-${challenger.user.username}`,
+    name: `${challenge.tier ?? 'bet'}-${challenger.user.username}`,
     type: ChannelType.GuildText,
     parent: category?.id,
     permissionOverwrites: overwrites,
@@ -640,7 +645,7 @@ async function logAndLockTicket(guild, ticketChannel, reason) {
   await ticketChannel.edit({
     parent: gameLogsCategory?.id ?? ticketChannel.parentId,
     permissionOverwrites: overwrites,
-    name: `closed-${ticketChannel.name}`,
+    name: `closed-${ticketChannel.name.startsWith('bet-') ? ticketChannel.name.slice(4) : ticketChannel.name}`,
   }).catch(e => console.error('Failed to move ticket:', e.message));
 
   await ticketChannel.send('🔒 This ticket has been archived and moved to game logs.').catch(() => {});
