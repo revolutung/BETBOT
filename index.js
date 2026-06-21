@@ -92,8 +92,12 @@ client.on('interactionCreate', async (interaction) => {
       if (interaction.commandName === 'payout')      return await handlePayout(interaction);
     }
     if (interaction.isButton()) {
-      if (interaction.customId.startsWith('join_'))  return await handleJoin(interaction);
-      if (interaction.customId.startsWith('leave_')) return await handleLeave(interaction);
+      if (interaction.customId.startsWith('join_'))           return await handleJoin(interaction);
+      if (interaction.customId.startsWith('leave_'))          return await handleLeave(interaction);
+      if (interaction.customId.startsWith('confirm_cancel_')) return await handleConfirmCancel(interaction);
+      if (interaction.customId.startsWith('abort_cancel_'))   return await handleAbortCancel(interaction);
+      if (interaction.customId.startsWith('confirm_leave_'))  return await handleConfirmLeave(interaction);
+      if (interaction.customId.startsWith('abort_leave_'))    return await handleAbortLeave(interaction);
     }
   } catch (err) {
     console.error(err);
@@ -312,89 +316,79 @@ async function handleLeave(interaction) {
   });
 }
 
-// ── Confirm / abort cancel (challenger) ──────────────────────────────────────
-client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isButton()) return;
+// ── Confirm cancel ────────────────────────────────────────────────────────────
+async function handleConfirmCancel(interaction) {
+  const embedMsgId = interaction.customId.replace('confirm_cancel_', '');
+  const challenge  = activeChallenges.get(embedMsgId) || [...activeChallenges.values()].find(c => c.embedMessageId === embedMsgId);
+  let strikeCount  = 0;
 
-  // Confirm cancel
-  if (interaction.customId.startsWith('confirm_cancel_')) {
-    const embedMsgId = interaction.customId.replace('confirm_cancel_', '');
-    const challenge  = activeChallenges.get(embedMsgId) || [...activeChallenges.values()].find(c => c.embedMessageId === embedMsgId);
+  if (challenge) {
+    activeChallenges.delete(embedMsgId);
+    activeChallenges.delete(challenge.embedMessageId);
 
-    if (challenge) {
-      activeChallenges.delete(embedMsgId);
+    strikeCount = await giveStrike(interaction.guild, interaction.member, 'Cancelled their own challenge');
 
-      // Give strike to the challenger who cancelled
-      const strikeCount = await giveStrike(interaction.guild, interaction.member, 'Cancelled their own challenge');
-
-      // Log ticket and lock it instead of deleting
-      if (challenge.ticketChannelId) {
-        const tc = interaction.guild.channels.cache.get(challenge.ticketChannelId);
-        if (tc) {
-          await logAndLockTicket(interaction.guild, tc, `🚫 Challenge cancelled by <@${interaction.user.id}>. They received **Strike ${strikeCount}/${CONFIG.STRIKES_BEFORE_BAN}**.`);
-        }
-      }
-
-      // Disable embed buttons
-      try {
-        const ch  = interaction.guild.channels.cache.get(challenge.channelId);
-        const msg = await ch?.messages.fetch(embedMsgId);
-        if (msg) {
-          const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('x1').setLabel('❌ Cancelled').setStyle(ButtonStyle.Danger).setDisabled(true),
-            new ButtonBuilder().setCustomId('x2').setLabel('❌ Leave').setStyle(ButtonStyle.Danger).setDisabled(true),
-          );
-          await msg.edit({ components: [row] });
-        }
-      } catch {}
+    if (challenge.ticketChannelId) {
+      const tc = interaction.guild.channels.cache.get(challenge.ticketChannelId);
+      if (tc) await logAndLockTicket(interaction.guild, tc, `🚫 Challenge cancelled by <@${interaction.user.id}>. They received **Strike ${strikeCount}/${CONFIG.STRIKES_BEFORE_BAN}**.`);
     }
 
-    return interaction.update({ content: `✅ Your challenge has been cancelled. You have received **Strike ${strikeCount}/${CONFIG.STRIKES_BEFORE_BAN}**.`, components: [] });
-  }
-
-  // Abort cancel
-  if (interaction.customId.startsWith('abort_cancel_')) {
-    return interaction.update({ content: '✅ Cancelled — your challenge is still open.', components: [] });
-  }
-
-  // Confirm leave (opponent)
-  if (interaction.customId.startsWith('confirm_leave_')) {
-    const embedMsgId     = interaction.customId.replace('confirm_leave_', '');
-    const challenge      = [...activeChallenges.values()].find(c => c.embedMessageId === embedMsgId);
-    const ticketChannelId = challenge?.ticketChannelId;
-    const ticket          = activeTickets.get(ticketChannelId);
-
-    if (!ticket) return interaction.update({ content: '❌ Match no longer active.', components: [] });
-
-    // Give strike
-    const strikeCount = await giveStrike(interaction.guild, interaction.member, 'Left an active match');
-
-    // Kick from ticket (remove view permission)
-    if (ticketChannelId) {
-      const tc = interaction.guild.channels.cache.get(ticketChannelId);
-      if (tc) {
-        await tc.permissionOverwrites.edit(interaction.user.id, {
-          [PermissionFlagsBits.ViewChannel]: false,
-          [PermissionFlagsBits.SendMessages]: false,
-        }).catch(() => {});
-        await tc.send(
-          `⚠️ <@${interaction.user.id}> has left the match and been removed from this ticket.\n` +
-          `They have been given **Strike ${strikeCount}/${CONFIG.STRIKES_BEFORE_BAN}**.`
-        ).catch(() => {});
+    try {
+      const ch  = interaction.guild.channels.cache.get(challenge.channelId);
+      const msg = await ch?.messages.fetch(challenge.embedMessageId);
+      if (msg) {
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('x1').setLabel('❌ Cancelled').setStyle(ButtonStyle.Danger).setDisabled(true),
+          new ButtonBuilder().setCustomId('x2').setLabel('❌ Leave').setStyle(ButtonStyle.Danger).setDisabled(true),
+        );
+        await msg.edit({ components: [row] });
       }
+    } catch {}
+  }
+
+  return interaction.update({ content: `✅ Your challenge has been cancelled. You have received **Strike ${strikeCount}/${CONFIG.STRIKES_BEFORE_BAN}**.`, components: [] });
+}
+
+// ── Abort cancel ──────────────────────────────────────────────────────────────
+async function handleAbortCancel(interaction) {
+  return interaction.update({ content: '✅ Cancelled — your challenge is still open.', components: [] });
+}
+
+// ── Confirm leave ─────────────────────────────────────────────────────────────
+async function handleConfirmLeave(interaction) {
+  const embedMsgId      = interaction.customId.replace('confirm_leave_', '');
+  const challenge       = [...activeChallenges.values()].find(c => c.embedMessageId === embedMsgId);
+  const ticketChannelId = challenge?.ticketChannelId;
+  const ticket          = activeTickets.get(ticketChannelId);
+
+  if (!ticket) return interaction.update({ content: '❌ Match no longer active.', components: [] });
+
+  const strikeCount = await giveStrike(interaction.guild, interaction.member, 'Left an active match');
+
+  if (ticketChannelId) {
+    const tc = interaction.guild.channels.cache.get(ticketChannelId);
+    if (tc) {
+      await tc.permissionOverwrites.edit(interaction.user.id, {
+        [PermissionFlagsBits.ViewChannel]: false,
+        [PermissionFlagsBits.SendMessages]: false,
+      }).catch(() => {});
+      await tc.send(
+        `⚠️ <@${interaction.user.id}> has left the match and been removed from this ticket.\n` +
+        `They have been given **Strike ${strikeCount}/${CONFIG.STRIKES_BEFORE_BAN}**.`
+      ).catch(() => {});
     }
-
-    return interaction.update({
-      content: `✅ You have left the match and received **Strike ${strikeCount}/${CONFIG.STRIKES_BEFORE_BAN}**. You have been removed from the ticket.`,
-      components: [],
-    });
   }
 
-  // Abort leave
-  if (interaction.customId.startsWith('abort_leave_')) {
-    return interaction.update({ content: "✅ Good call — you're still in the match.", components: [] });
-  }
-});
+  return interaction.update({
+    content: `✅ You have left the match and received **Strike ${strikeCount}/${CONFIG.STRIKES_BEFORE_BAN}**. You have been removed from the ticket.`,
+    components: [],
+  });
+}
+
+// ── Abort leave ───────────────────────────────────────────────────────────────
+async function handleAbortLeave(interaction) {
+  return interaction.update({ content: "✅ Good call — you're still in the match.", components: [] });
+}
 
 // ── Create ticket channel ─────────────────────────────────────────────────────
 async function createTicket(guild, challenger, opponent, challenge) {
