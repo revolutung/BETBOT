@@ -174,7 +174,7 @@ async function handleChallenge(interaction) {
     ticketChannelId: ticket.id,
   });
 
-  await interaction.editReply({ content: `✅ Challenge posted! Your ticket: ${ticket}` });
+  await interaction.editReply({ content: `✅ Challenge posted! Your ticket: ${ticket}` }).catch(() => {});
 }
 
 // ── Join button ───────────────────────────────────────────────────────────────
@@ -319,7 +319,7 @@ client.on('interactionCreate', async (interaction) => {
   // Confirm cancel
   if (interaction.customId.startsWith('confirm_cancel_')) {
     const embedMsgId = interaction.customId.replace('confirm_cancel_', '');
-    const challenge  = [...activeChallenges.values()].find(c => c.embedMessageId === embedMsgId);
+    const challenge  = activeChallenges.get(embedMsgId) || [...activeChallenges.values()].find(c => c.embedMessageId === embedMsgId);
 
     if (challenge) {
       activeChallenges.delete(embedMsgId);
@@ -349,7 +349,7 @@ client.on('interactionCreate', async (interaction) => {
       } catch {}
     }
 
-    return interaction.update({ content: `✅ Your challenge has been cancelled. You have received **Strike ${await getCurrentStrikes(interaction.guild, interaction.member)}/${CONFIG.STRIKES_BEFORE_BAN}**.`, components: [] });
+    return interaction.update({ content: `✅ Your challenge has been cancelled. You have received **Strike ${strikeCount}/${CONFIG.STRIKES_BEFORE_BAN}**.`, components: [] });
   }
 
   // Abort cancel
@@ -438,10 +438,12 @@ async function createTicket(guild, challenger, opponent, challenge) {
 
 // ── Give strike (shared helper) ───────────────────────────────────────────────
 async function giveStrike(guild, member, reason) {
+  // Force fetch member to get fresh roles
+  const freshMember = await guild.members.fetch(member.id).catch(() => member);
   let currentStrikes = 0;
   for (let i = 1; i <= CONFIG.STRIKES_BEFORE_BAN; i++) {
     const r = guild.roles.cache.find(role => role.name === `${CONFIG.STRIKE_ROLE_PREFIX}-${i}`);
-    if (r && member.roles.cache.has(r.id)) currentStrikes = i;
+    if (r && freshMember.roles.cache.has(r.id)) currentStrikes = i;
   }
 
   const newStrikes = Math.min(currentStrikes + 1, CONFIG.STRIKES_BEFORE_BAN);
