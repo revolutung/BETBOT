@@ -28,6 +28,9 @@ const CONFIG = {
   STRIKES_BEFORE_BAN:    3,
   STRIKE_ROLE_PREFIX:    'strike',   // roles: strike-1, strike-2, strike-3
   BET_BAN_ROLE_NAME:     'Bet Banned',
+  BOOSTER_ROLE_NAME:     'Server Booster', // Discord's default Nitro booster role name
+  MAX_CHALLENGES:        1,               // normal users
+  BOOSTER_MAX_CHALLENGES: 2,              // boosters
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -129,10 +132,13 @@ async function handleChallenge(interaction) {
     });
   }
 
-  // Check user doesn't already have an open challenge
-  const existing = [...activeChallenges.values()].find(c => c.challengerId === interaction.user.id);
-  if (existing) {
-    return interaction.reply({ content: '❌ You already have an open challenge. Use /cancel first.', ephemeral: true });
+  // Check challenge limit (boosters get 2, everyone else gets 1)
+  const isBooster   = interaction.member.premiumSince != null; // true if they boosted the server
+  const maxAllowed  = isBooster ? CONFIG.BOOSTER_MAX_CHALLENGES : CONFIG.MAX_CHALLENGES;
+  const openCount   = [...activeChallenges.values()].filter(c => c.challengerId === interaction.user.id).length;
+  if (openCount >= maxAllowed) {
+    const extra = isBooster ? '' : ' Boost the server to post 2 at once!';
+    return interaction.reply({ content: `❌ You already have ${openCount} open challenge(s). Maximum is ${maxAllowed}.${extra}`, ephemeral: true });
   }
 
   const winnerPayout = Math.floor(amount * 2 * (1 - CONFIG.HOUSE_CUT_PERCENT / 100));
@@ -432,8 +438,13 @@ async function createTicket(guild, challenger, opponent, challenge) {
 
 // ── Give strike (shared helper) ───────────────────────────────────────────────
 async function giveStrike(guild, member, reason) {
-  // Force fetch member to get fresh roles
-  const freshMember = await guild.members.fetch(member.id).catch(() => member);
+  // Force fetch member and guild roles fresh from Discord API
+  const [freshMember] = await Promise.all([
+    guild.members.fetch(member.id),
+    guild.roles.fetch(),
+  ]).catch(() => [member]);
+
+  // Count existing strikes
   let currentStrikes = 0;
   for (let i = 1; i <= CONFIG.STRIKES_BEFORE_BAN; i++) {
     const r = guild.roles.cache.find(role => role.name === `${CONFIG.STRIKE_ROLE_PREFIX}-${i}`);
@@ -442,11 +453,16 @@ async function giveStrike(guild, member, reason) {
 
   const newStrikes = Math.min(currentStrikes + 1, CONFIG.STRIKES_BEFORE_BAN);
   const newRole    = guild.roles.cache.find(r => r.name === `${CONFIG.STRIKE_ROLE_PREFIX}-${newStrikes}`);
-  if (newRole) await member.roles.add(newRole).catch(() => {});
+
+  if (!newRole) {
+    console.error(`Strike role not found: ${CONFIG.STRIKE_ROLE_PREFIX}-${newStrikes}. Make sure roles are created!`);
+  } else {
+    await freshMember.roles.add(newRole).catch(e => console.error('Failed to add strike role:', e));
+  }
 
   if (newStrikes >= CONFIG.STRIKES_BEFORE_BAN) {
     const banRole = guild.roles.cache.find(r => r.name === CONFIG.BET_BAN_ROLE_NAME);
-    if (banRole) await member.roles.add(banRole).catch(() => {});
+    if (banRole) await freshMember.roles.add(banRole).catch(e => console.error('Failed to add ban role:', e));
   }
 
   return newStrikes;
@@ -575,7 +591,8 @@ async function logAndLockTicket(guild, ticketChannel, reason) {
   }).catch(() => {});
 
   // Delete after logging
-  setTimeout(() => ticketChannel.delete().catch(() => {}), 3000);
+  await ticketChannel.send('🔒 This ticket is now closed and will be deleted in 5 seconds.').catch(() => {});
+  setTimeout(() => ticketChannel.delete().catch(e => console.error('Failed to delete ticket:', e)), 5000);
 }
 
 // ── Get current strike count helper ──────────────────────────────────────────
