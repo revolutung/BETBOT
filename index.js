@@ -29,9 +29,14 @@ const CONFIG = {
   STRIKES_BEFORE_BAN:    3,
   STRIKE_ROLE_PREFIX:    'Strike',   // roles: Strike 1, Strike 2, Strike 3
   BET_BAN_ROLE_NAME:     'Bet Banned',
-  BOOSTER_ROLE_NAME:     'Server Booster', // Discord's default Nitro booster role name
-  MAX_CHALLENGES:        1,               // normal users
-  BOOSTER_MAX_CHALLENGES: 2,              // boosters
+  // Challenge limits per role (checked in order — first match wins)
+  CHALLENGE_LIMITS: [
+    { role: '-- ᴜʟᴛɪᴍᴀᴛᴇ ᴘʟᴀʏᴇʀ --', max: 4 },
+    { role: '-- ꜱᴛᴀꜰꜰ --',           max: 3 },
+    { role: '-- ᴇʟɪᴛᴇ ᴘʟᴀʏᴇʀ --',    max: 2 },
+  ],
+  BOOSTER_MAX_CHALLENGES: 2, // server boosters
+  DEFAULT_MAX_CHALLENGES: 1, // everyone else
 };
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -39,15 +44,15 @@ const CONFIG = {
 // Add or remove games here. They will appear as a dropdown in /challenge.
 const GAMES = [
   'Rivals',
-  'Da Hood',
   'Blade Ball',
   'The Strongest Battlegrounds',
-  'BedWars',
-  'Arsenal',
-  'Murder Mystery 2',
-  'Criminality',
-  'Jailbreak',
-  'Brookhaven',
+  'Jujutsu Shenanigans',
+  'Chess (Chess.com)',
+  'Sniper Duels',
+  'Racket Rivals',
+  'Obby Duels',
+  'Timebomb Duels',
+  'Other (Agree on game before accepting!)',
 ];
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -161,13 +166,22 @@ async function handleChallenge(interaction) {
     return interaction.reply({ content: '🚫 You are **Bet Banned** and cannot create challenges.', ephemeral: true });
   }
 
-  // Check challenge limit (boosters get 2, everyone else gets 1)
-  const isBooster   = interaction.member.premiumSince != null; // true if they boosted the server
-  const maxAllowed  = isBooster ? CONFIG.BOOSTER_MAX_CHALLENGES : CONFIG.MAX_CHALLENGES;
-  const openCount   = [...activeChallenges.values()].filter(c => c.challengerId === interaction.user.id).length;
+  // Check challenge limit based on role
+  const memberRoleNames = interaction.member.roles.cache.map(r => r.name);
+  const isBooster = interaction.member.premiumSince != null;
+  let maxAllowed = isBooster ? CONFIG.BOOSTER_MAX_CHALLENGES : CONFIG.DEFAULT_MAX_CHALLENGES;
+  for (const entry of CONFIG.CHALLENGE_LIMITS) {
+    if (memberRoleNames.includes(entry.role)) {
+      maxAllowed = entry.max;
+      break;
+    }
+  }
+  const openCount = [...activeChallenges.values()].filter(c => c.challengerId === interaction.user.id).length;
   if (openCount >= maxAllowed) {
-    const extra = isBooster ? '' : ' Boost the server to post 2 at once!';
-    return interaction.reply({ content: `❌ You already have ${openCount} open challenge(s). Maximum is ${maxAllowed}.${extra}`, ephemeral: true });
+    return interaction.reply({
+      content: `❌ You already have **${openCount}** open challenge(s). Your limit is **${maxAllowed}**.`,
+      ephemeral: true
+    });
   }
 
   const winnerPayout = Math.floor(amount * 2 * (1 - CONFIG.HOUSE_CUT_PERCENT / 100));
